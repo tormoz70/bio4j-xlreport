@@ -1,0 +1,4 @@
+dependencies {
+    api 'org.slf4j:slf4j-api:2.0.17'
+    implementation 'org.apache.commons:commons-text:1.13.0'
+}

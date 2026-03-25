@@ -1,0 +1,6 @@
+rootProject.name = 'bio4j-xlreport'
+
+include 'engine-core'
+include 'engine-poi'
+include 'engine-js'
+include 'app-console'

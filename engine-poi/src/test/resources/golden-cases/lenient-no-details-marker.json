@@ -1,0 +1,28 @@
+{
+  "caseId": "lenient-no-details-marker",
+  "compatibilityMode": "LENIENT",
+  "mainSheetName": "Sheet1",
+  "xmlConfig": "<reportDef full_code=\"golden.file.lenient\" liveScripts=\"false\"><adv_template>${TEMPLATE_PATH}</adv_template><filename_fmt>${OUTPUT_PATH}</filename_fmt><title>Golden lenient</title><subject>regression</subject><autor>test</autor><dss><ds range=\"Sales\"><fields><field name=\"A\" /></fields></ds></dss></reportDef>",
+  "template": {
+    "sheetName": "Sheet1",
+    "rows": [
+      ["=sales_A"]
+    ],
+    "namedRanges": [
+      { "name": "Sales", "refersToFormula": "'Sheet1'!A1:A1" }
+    ]
+  },
+  "dataByRange": {
+    "Sales": [
+      { "A": "R1" }
+    ]
+  },
+  "expectations": {
+    "cells": [
+      { "a1Ref": "A1", "expectedString": "R1" }
+    ],
+    "namedRanges": [
+      { "name": "Sales", "expectedRefersToContains": "A1:A1" }
+    ]
+  }
+}

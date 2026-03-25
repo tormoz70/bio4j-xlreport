@@ -1,0 +1,38 @@
+{
+  "caseId": "grouped-totals-runtotal",
+  "mainSheetName": "Sheet1",
+  "xmlConfig": "<reportDef full_code=\"golden.file.grouped\" liveScripts=\"false\"><adv_template>${TEMPLATE_PATH}</adv_template><filename_fmt>${OUTPUT_PATH}</filename_fmt><title>Golden file report</title><subject>regression</subject><autor>test</autor><dss><ds range=\"Sales\"><fields><field name=\"dept\" /><field name=\"amount\" /></fields></ds></dss></reportDef>",
+  "template": {
+    "sheetName": "Sheet1",
+    "rows": [
+      ["groupH=sales_dept"],
+      ["details", "=sales_amount"],
+      ["groupF=sales_dept"],
+      ["totals", "sum(sum)"]
+    ],
+    "namedRanges": [
+      {
+        "name": "Sales",
+        "refersToFormula": "'Sheet1'!A1:B4"
+      }
+    ]
+  },
+  "dataByRange": {
+    "Sales": [
+      { "dept": "A", "amount": 10 },
+      { "dept": "A", "amount": 20 },
+      { "dept": "B", "amount": 7 }
+    ]
+  },
+  "expectations": {
+    "cells": [
+      { "a1Ref": "A1", "expectedString": "A" },
+      { "a1Ref": "B4", "expectedNumeric": 30.0 },
+      { "a1Ref": "B7", "expectedNumeric": 7.0 },
+      { "a1Ref": "B8", "expectedNumeric": 37.0, "expectedFormulaContains": "B4" }
+    ],
+    "namedRanges": [
+      { "name": "Sales", "expectedRefersToContains": "A1:B8" }
+    ]
+  }
+}

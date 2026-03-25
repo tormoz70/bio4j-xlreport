@@ -1,0 +1,16 @@
+plugins {
+    id 'application'
+}
+
+dependencies {
+    implementation project(':engine-core')
+    implementation project(':engine-poi')
+    implementation project(':engine-js')
+    implementation 'com.fasterxml.jackson.core:jackson-databind:2.18.3'
+    runtimeOnly 'com.oracle.database.jdbc:ojdbc11:23.9.0.25.07'
+    runtimeOnly 'org.apache.logging.log4j:log4j-core:2.25.3'
+}
+
+application {
+    mainClass = 'com.bio.xlreport.console.XlReportConsoleMain'
+}

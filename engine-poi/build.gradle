@@ -1,0 +1,8 @@
+dependencies {
+    api project(':engine-core')
+
+    implementation 'org.apache.poi:poi-ooxml:5.4.1'
+    implementation 'org.slf4j:slf4j-api:2.0.17'
+
+    testImplementation 'com.fasterxml.jackson.core:jackson-databind:2.18.3'
+}

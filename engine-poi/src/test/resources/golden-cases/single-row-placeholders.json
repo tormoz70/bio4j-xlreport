@@ -1,0 +1,26 @@
+{
+  "caseId": "single-row-placeholders",
+  "compatibilityMode": "STRICT",
+  "mainSheetName": "Sheet1",
+  "xmlConfig": "<reportDef full_code=\"golden.file.single\" liveScripts=\"false\"><adv_template>${TEMPLATE_PATH}</adv_template><filename_fmt>${OUTPUT_PATH}</filename_fmt><title>Golden single</title><subject>regression</subject><autor>test</autor><dss><ds range=\"customer\" singleRow=\"true\"><fields><field name=\"name\" /><field name=\"status\" /></fields></ds></dss></reportDef>",
+  "template": {
+    "sheetName": "Sheet1",
+    "rows": [
+      ["Value: customer_name"],
+      ["(customer_status)"]
+    ],
+    "namedRanges": []
+  },
+  "dataByRange": {
+    "customer": [
+      { "name": "Alice", "status": "VIP" }
+    ]
+  },
+  "expectations": {
+    "cells": [
+      { "a1Ref": "A1", "expectedString": "Value: Alice" },
+      { "a1Ref": "A2", "expectedString": "VIP" }
+    ],
+    "namedRanges": []
+  }
+}

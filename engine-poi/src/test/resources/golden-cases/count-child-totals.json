@@ -1,0 +1,35 @@
+{
+  "caseId": "count-child-totals",
+  "compatibilityMode": "STRICT",
+  "mainSheetName": "Sheet1",
+  "xmlConfig": "<reportDef full_code=\"golden.file.count\" liveScripts=\"false\"><adv_template>${TEMPLATE_PATH}</adv_template><filename_fmt>${OUTPUT_PATH}</filename_fmt><title>Golden count</title><subject>regression</subject><autor>test</autor><dss><ds range=\"Sales\"><fields><field name=\"dept\" /><field name=\"amount\" /></fields></ds></dss></reportDef>",
+  "template": {
+    "sheetName": "Sheet1",
+    "rows": [
+      ["groupH=sales_dept"],
+      ["details", "=sales_amount"],
+      ["groupF=sales_dept"],
+      ["totals", "cnt"]
+    ],
+    "namedRanges": [
+      { "name": "Sales", "refersToFormula": "'Sheet1'!A1:B4" }
+    ]
+  },
+  "dataByRange": {
+    "Sales": [
+      { "dept": "A", "amount": 10 },
+      { "dept": "A", "amount": 20 },
+      { "dept": "B", "amount": 7 }
+    ]
+  },
+  "expectations": {
+    "cells": [
+      { "a1Ref": "B4", "expectedNumeric": 2.0 },
+      { "a1Ref": "B7", "expectedNumeric": 1.0 },
+      { "a1Ref": "B8", "expectedNumeric": 3.0, "expectedFormulaContains": "SUM(" }
+    ],
+    "namedRanges": [
+      { "name": "Sales", "expectedRefersToContains": "A1:B8" }
+    ]
+  }
+}
