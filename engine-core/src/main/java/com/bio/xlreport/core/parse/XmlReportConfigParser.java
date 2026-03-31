@@ -56,10 +56,12 @@ public class XmlReportConfigParser {
             .convertResultToPdf(boolAttr(root, "convertResultToPDF", false))
             .extAttributes(parseExtAttributes(root));
 
+        validateLegacyFlags(root, mode);
+
         parseParams(root, "params", builder);
         parseParams(root, "inParams", builder);
         parseEnv(root, reportXsdStyle, builder);
-        parseDataSources(root, builder);
+        parseDataSources(root, builder, mode);
         parsePostScripts(root, builder, mode);
 
         return builder.build();
@@ -70,7 +72,7 @@ public class XmlReportConfigParser {
         return parse(xml, sourceFile, mode);
     }
 
-    private void parseDataSources(Element root, ReportConfig.ReportConfigBuilder builder) {
+    private void parseDataSources(Element root, ReportConfig.ReportConfigBuilder builder, CompatibilityMode mode) {
         NodeList dsNodes = root.getElementsByTagName("ds");
         for (int i = 0; i < dsNodes.getLength(); i++) {
             Element ds = (Element) dsNodes.item(i);
@@ -86,7 +88,15 @@ public class XmlReportConfigParser {
             Element sqlElem = firstChild(ds, "sql");
             if (sqlElem != null) {
                 dsBuilder.sql(sqlElem.getTextContent());
-                dsBuilder.commandType(attr(sqlElem, "commandType", "Text"));
+                String commandType = attr(sqlElem, "commandType", "Text");
+                dsBuilder.commandType(commandType);
+                if (!"text".equalsIgnoreCase(commandType)) {
+                    String msg = "Unsupported ds/sql commandType='" + commandType + "' for range '" + attr(ds, "range", "") + "'.";
+                    if (mode == CompatibilityMode.STRICT) {
+                        throw new IllegalArgumentException(msg + " Use LENIENT or migrate commandType to Text.");
+                    }
+                    log.warn("{} Proceeding in LENIENT mode.", msg);
+                }
             }
 
             Element fieldsElem = firstChild(ds, "fields");
@@ -129,6 +139,32 @@ public class XmlReportConfigParser {
         }
     }
 
+    private void validateLegacyFlags(Element root, CompatibilityMode mode) {
+        boolean convertToPdf = boolAttr(root, "convertResultToPDF", false);
+        Element append = firstChild(root, "append");
+        String pwdOpen = text(append, "pwdOpen", "").trim();
+        String pwdWrite = text(append, "pwdWrite", "").trim();
+        boolean liveScripts = boolAttr(root, "liveScripts", false);
+
+        if (convertToPdf) {
+            String msg = "convertResultToPDF is not implemented in Java runtime.";
+            if (mode == CompatibilityMode.STRICT) {
+                throw new IllegalArgumentException(msg + " Disable flag or use LENIENT.");
+            }
+            log.warn("{} Running without PDF conversion.", msg);
+        }
+        if (!pwdOpen.isBlank() || !pwdWrite.isBlank()) {
+            String msg = "Workbook passwords (pwdOpen/pwdWrite) are not implemented.";
+            if (mode == CompatibilityMode.STRICT) {
+                throw new IllegalArgumentException(msg + " Remove passwords from XML or use LENIENT.");
+            }
+            log.warn("{} Running without password protection.", msg);
+        }
+        if (liveScripts) {
+            log.warn("liveScripts=true detected. Execution is controlled by configured postScripts/legacy hooks only.");
+        }
+    }
+
     private void parsePostScripts(
         Element root,
         ReportConfig.ReportConfigBuilder builder,
@@ -151,50 +187,48 @@ public class XmlReportConfigParser {
         }
 
         // Backward compatibility for legacy VBA entries.
+        String macroBefore = text(root, "macroBefore", "").trim();
         Element macroAfterElem = firstChild(root, "macroAfter");
         String macroAfter = macroAfterElem != null ? attr(macroAfterElem, "name", text(root, "macroAfter", "")).trim() : text(root, "macroAfter", "").trim();
         String autoStart = text(root, "autostart", "").trim();
-        if (!macroAfter.isBlank() || !autoStart.isBlank()) {
-            String placeholderScript = """
-                // Legacy VBA macro mapping placeholder.
-                // Replace this script with a migrated JavaScript implementation.
-                // legacy.macroAfter = '%s'
-                // legacy.autostart = '%s'
-                """.formatted(macroAfter, autoStart);
-
-            builder.postScript(
-                PostScriptConfig.builder()
-                    .name("legacy-vba-mapping")
-                    .inlineScript(placeholderScript)
-                    .timeoutMs(30_000L)
-                    .build()
-            );
-
-            if (mode == CompatibilityMode.STRICT) {
-                log.warn("Legacy VBA fields found; mapped to JavaScript placeholder post-script.");
-            }
+        if (!macroBefore.isBlank()) {
+            builder.legacyMacroBefore(macroBefore);
+        }
+        if (!macroAfter.isBlank()) {
+            builder.legacyMacroAfter(macroAfter);
+        }
+        if (!autoStart.isBlank()) {
+            builder.legacyAutostart(autoStart);
+        }
+        if (!macroBefore.isBlank() || !macroAfter.isBlank() || !autoStart.isBlank()) {
+            log.warn("Legacy VBA fields found. macroBefore='{}', macroAfter='{}', autostart='{}'.", macroBefore, macroAfter, autoStart);
         }
 
-        // Legacy SQL scripts hooks are represented as post-processing placeholders for migration visibility.
+        // Legacy SQL hooks are captured as executable runtime stages.
         Element sqlBefore = firstChild(root, "sqlScriptBefore");
         if (sqlBefore != null && !sqlBefore.getTextContent().isBlank()) {
-            builder.postScript(
-                PostScriptConfig.builder()
-                    .name("legacy-sql-before")
-                    .inlineScript("// legacy sqlScriptBefore configured; migrate to java pre-step")
-                    .timeoutMs(30_000L)
-                    .build()
-            );
+            builder.preSqlScript(sqlBefore.getTextContent());
         }
         Element sqlAfter = firstChild(root, "sqlScriptAfter");
         if (sqlAfter != null && !sqlAfter.getTextContent().isBlank()) {
-            builder.postScript(
-                PostScriptConfig.builder()
-                    .name("legacy-sql-after")
-                    .inlineScript("// legacy sqlScriptAfter configured; migrate to java post-step")
-                    .timeoutMs(30_000L)
-                    .build()
-            );
+            builder.postSqlScript(sqlAfter.getTextContent());
+        }
+        Element sqlScripts = firstChild(root, "sqlScripts");
+        if (sqlScripts != null) {
+            NodeList sqlScriptNodes = sqlScripts.getElementsByTagName("script");
+            for (int i = 0; i < sqlScriptNodes.getLength(); i++) {
+                Element script = (Element) sqlScriptNodes.item(i);
+                String body = script.getTextContent();
+                if (body == null || body.isBlank()) {
+                    continue;
+                }
+                String stage = attr(script, "stage", attr(script, "hook", attr(script, "type", "after")));
+                if ("before".equalsIgnoreCase(stage) || "pre".equalsIgnoreCase(stage)) {
+                    builder.preSqlScript(body);
+                } else {
+                    builder.postSqlScript(body);
+                }
+            }
         }
     }
 

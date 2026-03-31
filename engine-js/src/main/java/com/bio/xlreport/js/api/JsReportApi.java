@@ -28,4 +28,11 @@ public class JsReportApi {
         }
         return name.getRefersToFormula();
     }
+
+    @HostAccess.Export
+    public boolean applyLegacyMacro(String macroName) {
+        // Runtime migration bridge for legacy VBA hooks.
+        // Project-specific behavior should be implemented in user post-scripts.
+        return macroName != null && !macroName.isBlank();
+    }
 }

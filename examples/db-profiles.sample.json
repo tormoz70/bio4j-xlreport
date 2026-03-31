@@ -1,0 +1,16 @@
+{
+  "default": {
+    "dbUrl": "jdbc:oracle:thin:@192.168.70.29:1521:GIVCDB",
+    "dbUser": "GIVCADMIN",
+    "dbPassword": "change-me",
+    "dbDriver": "oracle.jdbc.OracleDriver",
+    "dbFetchSize": 1000
+  },
+  "cub7": {
+    "dbUrl": "jdbc:oracle:thin:@192.168.70.29:1521:GIVCDB",
+    "dbUser": "GIVCADMIN",
+    "dbPassword": "change-me",
+    "dbDriver": "oracle.jdbc.OracleDriver",
+    "dbFetchSize": 1000
+  }
+}

@@ -15,6 +15,7 @@ class ConsoleArgs {
     Path dataJson;
     Path templateFile;
     Path outputFile;
+    Path dbProfilesFile;
     String dbUrl;
     String dbUser;
     String dbPassword;
@@ -25,6 +26,8 @@ class ConsoleArgs {
     String userUid;
     String userOrgId;
     String userRoles;
+    long perfSlaMs;
+    Path dbaPackOut;
     Map<String, String> reportParams;
 
     static ConsoleArgs parse(String[] args) {
@@ -36,6 +39,7 @@ class ConsoleArgs {
             .userUid("localuser")
             .userOrgId("")
             .userRoles("*")
+            .perfSlaMs(0L)
             .reportParams(new LinkedHashMap<>());
 
         for (String arg : args) {
@@ -58,6 +62,10 @@ class ConsoleArgs {
                 b.outputFile(Path.of(arg.substring("/out:".length())));
             } else if (arg.startsWith("--out=")) {
                 b.outputFile(Path.of(arg.substring("--out=".length())));
+            } else if (arg.startsWith("/dbProfiles:")) {
+                b.dbProfilesFile(Path.of(arg.substring("/dbProfiles:".length())));
+            } else if (arg.startsWith("--dbProfiles=")) {
+                b.dbProfilesFile(Path.of(arg.substring("--dbProfiles=".length())));
             } else if (arg.startsWith("/dbUrl:")) {
                 b.dbUrl(arg.substring("/dbUrl:".length()));
             } else if (arg.startsWith("--dbUrl=")) {
@@ -92,6 +100,14 @@ class ConsoleArgs {
                 b.userRoles(arg.substring("/rptUserRoles:".length()));
             } else if (arg.startsWith("/rptStopOnFinish:")) {
                 b.stopOnFinish(parseBoolean(arg.substring("/rptStopOnFinish:".length()), true));
+            } else if (arg.startsWith("/perfSlaMs:")) {
+                b.perfSlaMs(parsePositiveLong(arg.substring("/perfSlaMs:".length()), 0L));
+            } else if (arg.startsWith("--perfSlaMs=")) {
+                b.perfSlaMs(parsePositiveLong(arg.substring("--perfSlaMs=".length()), 0L));
+            } else if (arg.startsWith("/dbaPackOut:")) {
+                b.dbaPackOut(Path.of(arg.substring("/dbaPackOut:".length())));
+            } else if (arg.startsWith("--dbaPackOut=")) {
+                b.dbaPackOut(Path.of(arg.substring("--dbaPackOut=".length())));
             }
         }
         return b.build();
@@ -134,6 +150,18 @@ class ConsoleArgs {
         }
         try {
             int parsed = Integer.parseInt(raw.trim());
+            return parsed > 0 ? parsed : def;
+        } catch (NumberFormatException ex) {
+            return def;
+        }
+    }
+
+    private static long parsePositiveLong(String raw, long def) {
+        if (raw == null || raw.isBlank()) {
+            return def;
+        }
+        try {
+            long parsed = Long.parseLong(raw.trim());
             return parsed > 0 ? parsed : def;
         } catch (NumberFormatException ex) {
             return def;

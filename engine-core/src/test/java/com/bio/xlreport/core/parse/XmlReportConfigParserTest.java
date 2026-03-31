@@ -79,7 +79,7 @@ class XmlReportConfigParserTest {
         assertEquals("cub7", cfg.getDataSources().getFirst().getConnectionName());
         assertTrue(cfg.getParams().containsKey("date_from"));
         assertTrue(cfg.getEnvVars().containsKey("v1"));
-        assertFalse(cfg.getPostScripts().isEmpty());
+        assertEquals("Module1.m1", cfg.getLegacyMacroAfter());
     }
 
     @Test

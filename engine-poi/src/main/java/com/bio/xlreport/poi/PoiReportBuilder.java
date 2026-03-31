@@ -7,6 +7,8 @@ import com.bio.xlreport.core.model.CompatibilityMode;
 import com.bio.xlreport.core.model.DataSourceConfig;
 import com.bio.xlreport.core.model.FieldDef;
 import com.bio.xlreport.core.model.ReportConfig;
+import com.bio.xlreport.core.model.SortDef;
+import com.bio.xlreport.core.model.SortDirection;
 import java.io.InputStream;
 import java.nio.file.Files;
 import java.util.ArrayList;
@@ -57,6 +59,7 @@ public class PoiReportBuilder implements ReportBuilder {
         if (rows == null) {
             rows = List.of();
         }
+        rows = applySorts(rows, ds.getSorts());
         if (ds.isSingleRow()) {
             applySingleRowDataSource(wb, ds, rows);
             return;
@@ -98,6 +101,67 @@ public class PoiReportBuilder implements ReportBuilder {
         int endRow = startRow + outputRows.size() - 1;
         String newRange = PoiWorkbookOps.rangeA1(sheet.getSheetName(), startRow, endRow, startCol, endCol);
         name.setRefersToFormula(newRange);
+    }
+
+    private List<Map<String, Object>> applySorts(List<Map<String, Object>> rows, List<SortDef> sorts) {
+        if (rows == null || rows.size() <= 1 || sorts == null || sorts.isEmpty()) {
+            return rows == null ? List.of() : rows;
+        }
+        List<Map<String, Object>> sorted = new ArrayList<>(rows);
+        sorted.sort((a, b) -> compareBySorts(a, b, sorts));
+        return sorted;
+    }
+
+    private int compareBySorts(Map<String, Object> a, Map<String, Object> b, List<SortDef> sorts) {
+        for (SortDef sort : sorts) {
+            if (sort == null || sort.getFieldName() == null || sort.getFieldName().isBlank()) {
+                continue;
+            }
+            Object va = lookupIgnoreCase(a, sort.getFieldName());
+            Object vb = lookupIgnoreCase(b, sort.getFieldName());
+            int cmp = compareValues(va, vb);
+            if (cmp == 0) {
+                continue;
+            }
+            if (sort.getDirection() == SortDirection.DESC) {
+                cmp = -cmp;
+            }
+            return cmp;
+        }
+        return 0;
+    }
+
+    private Object lookupIgnoreCase(Map<String, Object> row, String key) {
+        if (row == null || key == null) {
+            return null;
+        }
+        Object direct = row.get(key);
+        if (direct != null) {
+            return direct;
+        }
+        for (var e : row.entrySet()) {
+            if (e.getKey() != null && e.getKey().equalsIgnoreCase(key)) {
+                return e.getValue();
+            }
+        }
+        return null;
+    }
+
+    @SuppressWarnings({ "rawtypes", "unchecked" })
+    private int compareValues(Object a, Object b) {
+        if (a == b) {
+            return 0;
+        }
+        if (a == null) {
+            return -1;
+        }
+        if (b == null) {
+            return 1;
+        }
+        if (a instanceof Comparable ca && a.getClass().isAssignableFrom(b.getClass())) {
+            return ca.compareTo(b);
+        }
+        return String.valueOf(a).compareToIgnoreCase(String.valueOf(b));
     }
 
     private void applySingleRowDataSource(XSSFWorkbook wb, DataSourceConfig ds, List<Map<String, Object>> rows) {

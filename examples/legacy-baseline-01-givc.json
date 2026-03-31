@@ -1,0 +1,35 @@
+{
+  "baselineId": "01_givc_clickhouse",
+  "sourceRoot": "c:/data/tmp/rrequest-to-migrate/ekb-cabinet/ekb-rpt/rpts_v2/01_givc",
+  "enabledEnv": "CLICKHOUSE_REGRESSION_ENABLED",
+  "executionProvider": "clickhouse",
+  "criteria": {
+    "requireBuildSuccess": true,
+    "checkNamedRanges": true,
+    "checkGroupSuppression": true,
+    "checkTotalsFormulas": true,
+    "checkHeaderSqlParams": true
+  },
+  "sla": {
+    "form030(rpt).xml": 60000,
+    "form004(rpt).xml": 45000,
+    "default": 90000
+  },
+  "reports": [
+    "CH/form000(rpt).xml",
+    "CH/form001(rpt).xml",
+    "CH/form003(rpt).xml",
+    "CH/form012(rpt).xml",
+    "CH/form013K(rpt).xml",
+    "CH/form021(rpt).xml",
+    "CH/form021obn(rpt).xml",
+    "CH/form030-ch(rpt).xml",
+    "CH/form041(rpt).xml",
+    "CH/form060(rpt).xml",
+    "CH/form121-CH(rpt).xml",
+    "CH/form122(rpt).xml",
+    "CH/form130(rpt).xml",
+    "CH/form168(rpt).xml",
+    "CH/form500-CH(rpt).xml"
+  ]
+}

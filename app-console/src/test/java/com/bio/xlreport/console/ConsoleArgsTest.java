@@ -45,6 +45,7 @@ class ConsoleArgsTest {
     void parseOracleArgs() {
         String[] args = {
             "/rpt:C:/rpts/form100(rpt).xml",
+            "/dbProfiles:C:/cfg/db-profiles.json",
             "/dbUrl:jdbc:oracle:thin:@//10.10.10.10:1521/XEPDB1",
             "/dbUser:RPT_USER",
             "/dbPassword:secret",
@@ -57,5 +58,6 @@ class ConsoleArgsTest {
         assertEquals("secret", parsed.getDbPassword());
         assertEquals("oracle.jdbc.OracleDriver", parsed.getDbDriver());
         assertEquals(2000, parsed.getDbFetchSize());
+        assertEquals("C:\\cfg\\db-profiles.json", parsed.getDbProfilesFile().toString());
     }
 }

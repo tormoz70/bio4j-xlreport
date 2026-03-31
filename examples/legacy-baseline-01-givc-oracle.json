@@ -1,0 +1,30 @@
+{
+  "baselineId": "01_givc_oracle",
+  "sourceRoot": "c:/data/tmp/rrequest-to-migrate/ekb-cabinet/ekb-rpt/rpts_olds/01_givc",
+  "enabledEnv": "ORACLE_REGRESSION_ENABLED",
+  "executionProvider": "oracle",
+  "criteria": {
+    "requireBuildSuccess": true,
+    "checkNamedRanges": true,
+    "checkGroupSuppression": true,
+    "checkTotalsFormulas": true,
+    "checkHeaderSqlParams": true
+  },
+  "sla": {
+    "form030(rpt).xml": 60000,
+    "form004(rpt).xml": 45000,
+    "default": 90000
+  },
+  "reports": [
+    "form004(rpt).xml",
+    "form030(rpt).xml",
+    "form041(rpt).xml",
+    "form060(rpt).xml",
+    "form121(rpt).xml",
+    "form122(rpt).xml",
+    "form130(rpt).xml",
+    "form166(rpt).xml",
+    "form167(rpt).xml",
+    "form339(rpt).xml"
+  ]
+}

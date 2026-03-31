@@ -19,6 +19,7 @@ import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
@@ -39,6 +40,35 @@ final class OracleJdbcDataProvider implements DataProvider {
     private final int fetchSize;
     private final Path reportXmlPath;
     private final Map<String, String> bindParams;
+    private final List<QueryTrace> traces = Collections.synchronizedList(new ArrayList<>());
+
+    void executeSqlHook(String hookName, String sqlText, int timeoutSeconds) throws Exception {
+        if (sqlText == null || sqlText.isBlank()) {
+            return;
+        }
+        String resolved = resolveSql(sqlText);
+        NamedSql named = compileNamedSql(resolved);
+        Class.forName(dbDriver);
+        long startedNs = System.nanoTime();
+        try (
+            Connection cn = DriverManager.getConnection(dbUrl, dbUser, dbPassword);
+            PreparedStatement ps = cn.prepareStatement(named.sql())
+        ) {
+            bindParams(ps, named.paramOrder(), bindParams);
+            ps.setFetchSize(1);
+            ps.setQueryTimeout(Math.max(1, timeoutSeconds));
+            ps.execute();
+            traces.add(new QueryTrace(hookName, resolved, named.paramOrder().size(), (System.nanoTime() - startedNs) / 1_000_000L));
+            logMs("SQL hook '" + hookName + "' executed", startedNs);
+        } catch (SQLException ex) {
+            throw new SQLException(
+                "SQL hook failed: " + hookName + ". SQL: " + resolved + ". " + ex.getMessage(),
+                ex.getSQLState(),
+                ex.getErrorCode(),
+                ex
+            );
+        }
+    }
 
     @Override
     public List<Map<String, Object>> fetch(DataSourceConfig config) throws Exception {
@@ -68,6 +98,14 @@ final class OracleJdbcDataProvider implements DataProvider {
                 logMs("DS[" + config.getRangeName() + "] executeQuery", executeStartedNs);
                 long readStartedNs = System.nanoTime();
                 List<Map<String, Object>> rows = readRows(rs, maxRows);
+                traces.add(
+                    new QueryTrace(
+                        "fetch:" + config.getRangeName(),
+                        namedSql.sql(),
+                        namedSql.paramOrder().size(),
+                        (System.nanoTime() - executeStartedNs) / 1_000_000L
+                    )
+                );
                 logMs("DS[" + config.getRangeName() + "] readRows count=" + rows.size(), readStartedNs);
                 logMs("DS[" + config.getRangeName() + "] total fetch", startedNs);
                 return rows;
@@ -369,6 +407,20 @@ final class OracleJdbcDataProvider implements DataProvider {
     }
 
     private record BoundParam(int index, String name, String type, String value) {
+    }
+
+    List<QueryTrace> queryTracesSnapshot() {
+        synchronized (traces) {
+            return List.copyOf(traces);
+        }
+    }
+
+    record QueryTrace(
+        String stage,
+        String sql,
+        int bindCount,
+        long elapsedMs
+    ) {
     }
 
     private void log(String msg) {

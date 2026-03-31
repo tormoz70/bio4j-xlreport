@@ -1,9 +1,10 @@
 package com.bio.xlreport.console;
 
-import com.bio.xlreport.core.ReportEngine;
 import com.bio.xlreport.core.api.DataProvider;
 import com.bio.xlreport.core.api.MapDataProvider;
+import com.bio.xlreport.core.api.ReportSession;
 import com.bio.xlreport.core.model.CompatibilityMode;
+import com.bio.xlreport.core.model.PostScriptConfig;
 import com.bio.xlreport.core.model.ReportConfig;
 import com.bio.xlreport.core.parse.XmlReportConfigParser;
 import com.bio.xlreport.js.GraalJsPostProcessor;
@@ -118,17 +119,15 @@ public final class XlReportConsoleMain {
             );
         }
 
-        var reportEngine = ReportEngine
-            .of(parser, new PoiReportBuilder())
-            .withPostProcessor(new GraalJsPostProcessor());
         stage = Instant.now();
         DataProvider provider = createDataProvider(args, config, runtimeParams);
         logStage("create data provider", stage);
         stage = Instant.now();
-        Path out = reportEngine.build(config, provider);
+        Path out = runBuildPipeline(config, provider);
         logStage("engine build (fetch + poi + post)", stage);
 
         Duration dur = Duration.between(started, Instant.now());
+        checkPerformanceSla(args, dur, provider, config);
         log("Report done: " + out);
         log("Duration: " + formatDuration(dur));
         log("Total elapsed from args parse: " + formatDuration(Duration.between(t0, Instant.now())));
@@ -246,29 +245,159 @@ public final class XlReportConsoleMain {
 
     private static DataProvider createDataProvider(ConsoleArgs args, ReportConfig config, Map<String, String> runtimeParams) throws Exception {
         if (isOracleMode(args)) {
-            if (args.getDbUser() == null || args.getDbUser().isBlank()) {
-                throw new IllegalArgumentException("Oracle mode requires /dbUser:<user>");
+            DbProfiles profiles = resolveDbProfiles(args, config);
+            if (profiles.byConnection().isEmpty()) {
+                throw new IllegalArgumentException(
+                    "Oracle mode requires /dbUrl,/dbUser,/dbPassword or /dbProfiles:<json> with at least one profile."
+                );
             }
-            if (args.getDbPassword() == null) {
-                throw new IllegalArgumentException("Oracle mode requires /dbPassword:<password>");
-            }
-            log("Data source mode: ORACLE JDBC (" + args.getDbUser() + "@" + args.getDbUrl() + ")");
-            return new OracleJdbcDataProvider(
-                args.getDbUrl(),
-                args.getDbUser(),
-                args.getDbPassword(),
-                args.getDbDriver(),
-                args.getDbFetchSize(),
-                args.getReportXml(),
-                runtimeParams
-            );
+            log("Data source mode: ORACLE JDBC profiles=" + profiles.byConnection().keySet());
+            return new RoutingJdbcDataProvider(profiles.defaultProfile(), profiles.byConnection());
         }
         Map<String, List<Map<String, Object>>> data = loadData(args.getDataJson());
         log("Data source mode: JSON");
         return new MapDataProvider(data);
     }
 
+    private static Path runBuildPipeline(ReportConfig config, DataProvider provider) throws Exception {
+        OracleJdbcDataProvider oracle = extractOracleProvider(provider);
+        if (oracle != null) {
+            executeSqlHooks(oracle, config.getPreSqlScripts(), "pre-sql");
+        }
+        PoiReportBuilder builder = new PoiReportBuilder();
+        GraalJsPostProcessor jsPost = new GraalJsPostProcessor();
+        try (ReportSession session = builder.build(config, provider)) {
+            if (oracle != null) {
+                executeSqlHooks(oracle, config.getPostSqlScripts(), "post-sql");
+            }
+            runLegacyMacroScripts(config, jsPost, session);
+            for (PostScriptConfig script : config.getPostScripts()) {
+                jsPost.process(config, script, session);
+            }
+            session.save();
+            return session.outputPath();
+        }
+    }
+
+    private static OracleJdbcDataProvider extractOracleProvider(DataProvider provider) {
+        if (provider instanceof OracleJdbcDataProvider oracle) {
+            return oracle;
+        }
+        if (provider instanceof RoutingJdbcDataProvider routed) {
+            return routed.defaultProvider();
+        }
+        return null;
+    }
+
+    private static void executeSqlHooks(OracleJdbcDataProvider oracle, List<String> hooks, String stageName) throws Exception {
+        if (hooks == null || hooks.isEmpty()) {
+            return;
+        }
+        int idx = 1;
+        for (String sql : hooks) {
+            if (sql == null || sql.isBlank()) {
+                continue;
+            }
+            oracle.executeSqlHook(stageName + "-" + idx, sql, 120);
+            idx++;
+        }
+    }
+
+    private static void runLegacyMacroScripts(
+        ReportConfig config,
+        GraalJsPostProcessor jsPost,
+        ReportSession session
+    ) throws Exception {
+        runLegacyMacroScript(config.getLegacyMacroBefore(), "legacy-macro-before", config, jsPost, session);
+        runLegacyMacroScript(config.getLegacyMacroAfter(), "legacy-macro-after", config, jsPost, session);
+        runLegacyMacroScript(config.getLegacyAutostart(), "legacy-autostart", config, jsPost, session);
+    }
+
+    private static void runLegacyMacroScript(
+        String macroName,
+        String prefix,
+        ReportConfig config,
+        GraalJsPostProcessor jsPost,
+        ReportSession session
+    ) throws Exception {
+        if (macroName == null || macroName.isBlank()) {
+            return;
+        }
+        String script = """
+            // Auto-migrated legacy macro hook.
+            // legacy macro name: %s
+            if (typeof report.applyLegacyMacro === 'function') {
+              report.applyLegacyMacro('%s');
+            }
+            """.formatted(escapeJs(macroName), escapeJs(macroName));
+        PostScriptConfig cfg = PostScriptConfig.builder()
+            .name(prefix + "-" + macroName)
+            .inlineScript(script)
+            .timeoutMs(30_000L)
+            .build();
+        jsPost.process(config, cfg, session);
+    }
+
+    private static String escapeJs(String value) {
+        return value.replace("\\", "\\\\").replace("'", "\\'");
+    }
+
+    private static void checkPerformanceSla(
+        ConsoleArgs args,
+        Duration duration,
+        DataProvider provider,
+        ReportConfig config
+    ) throws Exception {
+        if (args.getPerfSlaMs() <= 0) {
+            return;
+        }
+        long elapsedMs = duration.toMillis();
+        if (elapsedMs <= args.getPerfSlaMs()) {
+            log("SLA OK: " + elapsedMs + " ms <= " + args.getPerfSlaMs() + " ms");
+            return;
+        }
+        log("SLA VIOLATION: " + elapsedMs + " ms > " + args.getPerfSlaMs() + " ms");
+        OracleJdbcDataProvider oracle = extractOracleProvider(provider);
+        if (oracle == null || args.getDbaPackOut() == null) {
+            return;
+        }
+        writeDbaPack(args.getDbaPackOut(), config, elapsedMs, args.getPerfSlaMs(), oracle.queryTracesSnapshot());
+    }
+
+    private static void writeDbaPack(
+        Path outFile,
+        ReportConfig config,
+        long elapsedMs,
+        long slaMs,
+        List<OracleJdbcDataProvider.QueryTrace> traces
+    ) throws Exception {
+        Path parent = outFile.getParent();
+        if (parent != null) {
+            Files.createDirectories(parent);
+        }
+        StringBuilder sb = new StringBuilder();
+        sb.append("# DBA Pack\n\n");
+        sb.append("- report: ").append(config.getFullCode()).append("\n");
+        sb.append("- elapsedMs: ").append(elapsedMs).append("\n");
+        sb.append("- slaMs: ").append(slaMs).append("\n");
+        sb.append("- generatedAt: ").append(LocalDateTime.now().format(DT_FMT)).append("\n\n");
+        sb.append("## Queries\n\n");
+        int idx = 1;
+        for (var t : traces) {
+            sb.append("### ").append(idx).append(". ").append(t.stage()).append("\n");
+            sb.append("- elapsedMs: ").append(t.elapsedMs()).append("\n");
+            sb.append("- bindCount: ").append(t.bindCount()).append("\n");
+            sb.append("```sql\n").append(t.sql()).append("\n```\n\n");
+            idx++;
+        }
+        Files.writeString(outFile, sb.toString());
+        log("DBA pack written: " + outFile);
+    }
+
     private static boolean isOracleMode(ConsoleArgs args) {
+        if (args.getDbProfilesFile() != null) {
+            return true;
+        }
         return args.getDbUrl() != null && !args.getDbUrl().isBlank();
     }
 
@@ -280,18 +409,82 @@ public final class XlReportConsoleMain {
         if (xmlParams.isEmpty()) {
             return Map.of();
         }
-        OracleJdbcDataProvider resolver = new OracleJdbcDataProvider(
-            args.getDbUrl(),
-            args.getDbUser(),
-            args.getDbPassword(),
-            args.getDbDriver(),
-            args.getDbFetchSize(),
-            args.getReportXml(),
-            runtimeParams
-        );
+        OracleJdbcDataProvider resolver = resolveDbProfiles(args, null, runtimeParams).defaultProfile();
         Map<String, String> resolved = resolver.resolveReportParams(xmlParams);
         log("Resolved report params from XML definitions: " + resolved.size());
         return resolved;
+    }
+
+    private static DbProfiles resolveDbProfiles(ConsoleArgs args, ReportConfig config) throws Exception {
+        return resolveDbProfiles(args, config, Map.of());
+    }
+
+    private static DbProfiles resolveDbProfiles(ConsoleArgs args, ReportConfig config, Map<String, String> runtimeParams) throws Exception {
+        Map<String, OracleJdbcDataProvider> byConn = new LinkedHashMap<>();
+        OracleJdbcDataProvider defaultProvider = null;
+
+        if (args.getDbProfilesFile() != null) {
+            Map<String, DbProfileSpec> specs = JSON.readValue(
+                args.getDbProfilesFile().toFile(),
+                new TypeReference<Map<String, DbProfileSpec>>() {
+                }
+            );
+            for (var e : specs.entrySet()) {
+                String key = normalizeConnectionName(e.getKey());
+                DbProfileSpec spec = e.getValue();
+                OracleJdbcDataProvider provider = new OracleJdbcDataProvider(
+                    spec.dbUrl,
+                    spec.dbUser,
+                    spec.dbPassword,
+                    spec.dbDriver == null || spec.dbDriver.isBlank() ? "oracle.jdbc.OracleDriver" : spec.dbDriver,
+                    spec.dbFetchSize > 0 ? spec.dbFetchSize : 1_000,
+                    args.getReportXml(),
+                    runtimeParams
+                );
+                byConn.put(key, provider);
+                if ("default".equals(key) && defaultProvider == null) {
+                    defaultProvider = provider;
+                }
+            }
+        }
+        if (args.getDbUrl() != null && !args.getDbUrl().isBlank()) {
+            if (args.getDbUser() == null || args.getDbUser().isBlank()) {
+                throw new IllegalArgumentException("Oracle mode requires /dbUser:<user> when /dbUrl is provided.");
+            }
+            if (args.getDbPassword() == null) {
+                throw new IllegalArgumentException("Oracle mode requires /dbPassword:<password> when /dbUrl is provided.");
+            }
+            OracleJdbcDataProvider cli = new OracleJdbcDataProvider(
+                args.getDbUrl(),
+                args.getDbUser(),
+                args.getDbPassword(),
+                args.getDbDriver(),
+                args.getDbFetchSize(),
+                args.getReportXml(),
+                runtimeParams
+            );
+            byConn.putIfAbsent("default", cli);
+            if (defaultProvider == null) {
+                defaultProvider = cli;
+            }
+        }
+        if (defaultProvider == null && !byConn.isEmpty()) {
+            defaultProvider = byConn.values().iterator().next();
+        }
+        if (config != null && defaultProvider != null) {
+            for (var ds : config.getDataSources()) {
+                String key = normalizeConnectionName(ds.getConnectionName());
+                byConn.putIfAbsent(key, defaultProvider);
+            }
+        }
+        return new DbProfiles(defaultProvider, byConn);
+    }
+
+    private static String normalizeConnectionName(String value) {
+        if (value == null || value.isBlank()) {
+            return "default";
+        }
+        return value.trim().toLowerCase(Locale.ROOT);
     }
 
     private static String escapeXml(String s) {
@@ -308,7 +501,7 @@ public final class XlReportConsoleMain {
         System.out.println("Usage:");
         System.out.println("  gradlew :app-console:run --args=\"console\"");
         System.out.println("  gradlew :app-console:run --args=\"/rpt:<report.xml> [/template:<template.xlsx>] [/data:<data.json>] [/mode:strict|lenient] [/out:<file>] [/rptPrms:k=v;a=b] [/rptStopOnFinish:true|false]\"");
-        System.out.println("  gradlew :app-console:run --args=\"/rpt:<report.xml> /dbUrl:<jdbc-url> /dbUser:<user> /dbPassword:<password> [/dbDriver:oracle.jdbc.OracleDriver] [/dbFetchSize:1000] [/template:<template.xlsx>] [/mode:strict|lenient] [/out:<file>] [/rptPrms:k=v;a=b]\"");
+        System.out.println("  gradlew :app-console:run --args=\"/rpt:<report.xml> /dbUrl:<jdbc-url> /dbUser:<user> /dbPassword:<password> [/dbDriver:oracle.jdbc.OracleDriver] [/dbFetchSize:1000] [/dbProfiles:<profiles.json>] [/perfSlaMs:60000] [/dbaPackOut:C:/tmp/dba-pack.md] [/template:<template.xlsx>] [/mode:strict|lenient] [/out:<file>] [/rptPrms:k=v;a=b]\"");
         System.out.println();
         System.out.println("data.json format:");
         System.out.println("  { \"mRng\": [ { \"field1\": \"value\", \"field2\": 10 } ] }");
@@ -328,5 +521,20 @@ public final class XlReportConsoleMain {
     private static void logStage(String stageName, Instant startedAt) {
         Duration d = Duration.between(startedAt, Instant.now());
         log("Stage '" + stageName + "' took " + d.toMillis() + " ms");
+    }
+
+    private record DbProfileSpec(
+        String dbUrl,
+        String dbUser,
+        String dbPassword,
+        String dbDriver,
+        int dbFetchSize
+    ) {
+    }
+
+    private record DbProfiles(
+        OracleJdbcDataProvider defaultProfile,
+        Map<String, OracleJdbcDataProvider> byConnection
+    ) {
     }
 }

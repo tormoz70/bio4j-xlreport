@@ -32,4 +32,11 @@ public class ReportConfig {
     List<DataSourceConfig> dataSources;
     @Singular
     List<PostScriptConfig> postScripts;
+    @Singular
+    List<String> preSqlScripts;
+    @Singular
+    List<String> postSqlScripts;
+    String legacyMacroBefore;
+    String legacyMacroAfter;
+    String legacyAutostart;
 }
