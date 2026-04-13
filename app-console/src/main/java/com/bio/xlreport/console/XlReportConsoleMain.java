@@ -323,19 +323,16 @@ public final class XlReportConsoleMain {
         if (macroName == null || macroName.isBlank()) {
             return;
         }
-        String script = """
-            // Auto-migrated legacy macro hook.
-            // legacy macro name: %s
-            if (typeof report.applyLegacyMacro === 'function') {
-              report.applyLegacyMacro('%s');
+        // Resolve macro library directory from template path
+        String macroLibDir = null;
+        if (config.getTemplatePath() != null) {
+            Path templateDir = config.getTemplatePath().getParent();
+            if (templateDir != null) {
+                macroLibDir = templateDir.toAbsolutePath().toString();
             }
-            """.formatted(escapeJs(macroName), escapeJs(macroName));
-        PostScriptConfig cfg = PostScriptConfig.builder()
-            .name(prefix + "-" + macroName)
-            .inlineScript(script)
-            .timeoutMs(30_000L)
-            .build();
-        jsPost.process(config, cfg, session);
+        }
+        log("Running legacy macro: " + macroName + " (macro lib dir: " + macroLibDir + ")");
+        jsPost.processMacro(config, macroName, macroLibDir, session);
     }
 
     private static String escapeJs(String value) {
