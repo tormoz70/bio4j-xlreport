@@ -1,4 +1,4 @@
-@echo off
+﻿@echo off
 REM ==========================================================================
 REM  form032 — Сводка по городам/кинотеатрам (Module1.buildAll)
 REM
@@ -22,12 +22,15 @@ set RPT_XML=%RPT_DIR%\form032(rpt).xml
 set TEMPLATE_XLSX=%RPT_DIR%\form032(rpt).xlsm
 set OUT_FILE=c:\data\prjs\bio4j-xlreport\out\form032-macro-buildAll.xlsm
 
-REM ── Oracle JDBC ─────────────────────────────────────────────────────────────
-set DB_URL=jdbc:oracle:thin:@192.168.70.29:1521:GIVCDB
-set DB_USER=GIVCADMIN
-set DB_PASSWORD=j12
-set DB_DRIVER=oracle.jdbc.OracleDriver
-set DB_FETCH_SIZE=1000
+REM ── Load credentials from env_oracle.cmd if env vars are not set ────────────
+if "%ORACLE_DB_USER%"=="" if exist "%USERPROFILE%\.bio4j-xlreport\env_oracle.cmd" call "%USERPROFILE%\.bio4j-xlreport\env_oracle.cmd"
+if "%ORACLE_DB_USER%"=="" ( echo ERROR: ORACLE_DB_USER not set. Copy env_oracle.sample.cmd to env_oracle.cmd and fill in credentials. & exit /b 1 )
+
+set DB_URL=%ORACLE_DB_URL%
+set DB_USER=%ORACLE_DB_USER%
+set DB_PASSWORD=%ORACLE_DB_PASSWORD%
+set DB_DRIVER=%ORACLE_DB_DRIVER%
+set DB_FETCH_SIZE=%ORACLE_DB_FETCH_SIZE%
 
 REM ── Mode: lenient required (convertResultToPDF + liveScripts flags) ─────────
 set MODE=lenient
@@ -38,9 +41,9 @@ REM  wee_id    — weekend period ID from givc_nsi.weekends_per
 set RPT_PRMS=pu_number=12345;wee_id=1
 
 REM  User context
-set RPT_USER_UID=38522A3CD08D437DE0531E32A8C08E11
-set RPT_USER_ORG=5567
-set RPT_USER_ROLES=1,6
+set RPT_USER_UID=%ORACLE_RPT_USER_UID%
+set RPT_USER_ORG=%ORACLE_RPT_USER_ORG%
+set RPT_USER_ROLES=%ORACLE_RPT_USER_ROLES%
 
 set STOP_ON_FINISH=true
 
