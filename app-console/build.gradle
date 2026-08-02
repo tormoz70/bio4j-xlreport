@@ -12,5 +12,5 @@ dependencies {
 }
 
 application {
-    mainClass = 'com.bio.xlreport.console.XlReportConsoleMain'
+    mainClass = 'ru.mywayline.xlreport.console.XlReportConsoleMain'
 }

@@ -4,3 +4,9 @@ build/
 out/
 .idea/
 *.iml
+
+# Local publish/signing secrets (use ~/.gradle/gradle.properties instead)
+gradle-local.properties
+secring.gpg
+*.gpg
+!gradle/wrapper/**

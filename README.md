@@ -36,6 +36,26 @@ Built for migrating and modernizing enterprise reporting stacks: Apache POI gene
 | `engine-js` | JavaScript post-processing over the report object model |
 | `app-console` | Console runner for interactive and batch builds |
 
+## Maven coordinates
+
+Published under the `myway-line.ru` namespace:
+
+```text
+ru.myway-line.xlreport:engine-core:0.1.0
+ru.myway-line.xlreport:engine-poi:0.1.0
+ru.myway-line.xlreport:engine-js:0.1.0
+```
+
+```gradle
+dependencies {
+    implementation 'ru.myway-line.xlreport:engine-core:0.1.0'
+    implementation 'ru.myway-line.xlreport:engine-poi:0.1.0'
+    implementation 'ru.myway-line.xlreport:engine-js:0.1.0'
+}
+```
+
+Publishing setup (Central Portal, DNS TXT, GPG): see [docs/PUBLISHING.md](docs/PUBLISHING.md).
+
 ## Quick start
 
 ### Console (interactive)

@@ -1,5 +1,12 @@
+plugins {
+    id 'com.vanniktech.maven.publish' version '0.37.0' apply false
+}
+
+import com.vanniktech.maven.publish.JavaLibrary
+import com.vanniktech.maven.publish.JavadocJar
+
 allprojects {
-    group = 'com.bio.xlreport'
+    group = 'ru.myway-line.xlreport'
     version = '0.1.0'
 
     repositories {
@@ -34,5 +41,59 @@ subprojects {
 
     tasks.withType(Test).configureEach {
         useJUnitPlatform()
+    }
+}
+
+def publishedModules = [
+        project(':engine-core'),
+        project(':engine-poi'),
+        project(':engine-js'),
+]
+
+def canSignPublications = (
+        findProperty('signing.keyId') ||
+        findProperty('signingInMemoryKey') ||
+        System.getenv('ORG_GRADLE_PROJECT_signingInMemoryKey')
+)
+
+configure(publishedModules) {
+    apply plugin: 'com.vanniktech.maven.publish'
+
+    // Empty javadoc jar: Lombok builders are not visible to plain javadoc.
+    mavenPublishing {
+        configure(new JavaLibrary(new JavadocJar.Empty(), true))
+        publishToMavenCentral()
+        if (canSignPublications) {
+            signAllPublications()
+        }
+
+        coordinates(project.group.toString(), project.name, project.version.toString())
+
+        pom {
+            name = "bio4j-xlreport ${project.name}"
+            description = project.findProperty('POM_DESCRIPTION') ?:
+                    'Java 21 Excel report engine: XML definitions, XLSX templates, Apache POI, GraalJS'
+            inceptionYear = '2026'
+            url = 'https://github.com/tormoz70/bio4j-xlreport'
+            licenses {
+                license {
+                    name = 'The Apache License, Version 2.0'
+                    url = 'https://www.apache.org/licenses/LICENSE-2.0.txt'
+                    distribution = 'repo'
+                }
+            }
+            developers {
+                developer {
+                    id = 'tormoz70'
+                    name = 'Ayrat'
+                    url = 'https://github.com/tormoz70'
+                }
+            }
+            scm {
+                url = 'https://github.com/tormoz70/bio4j-xlreport'
+                connection = 'scm:git:git://github.com/tormoz70/bio4j-xlreport.git'
+                developerConnection = 'scm:git:ssh://git@github.com/tormoz70/bio4j-xlreport.git'
+            }
+        }
     }
 }
