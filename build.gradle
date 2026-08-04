@@ -7,7 +7,7 @@ import com.vanniktech.maven.publish.JavadocJar
 
 allprojects {
     group = 'ru.myway-line.xlreport'
-    version = '0.1.0'
+    version = '0.1.1'
 
     repositories {
         mavenCentral()
