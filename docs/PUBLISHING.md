@@ -26,26 +26,130 @@ Maven `groupId` keeps the domain form: `ru.myway-line.xlreport`.
 | 6. `~/.gradle/gradle.properties` secrets | Manual | Local machine only |
 | 7. `gradlew publishAndReleaseToMavenCentral` | After 2–6 | Terminal |
 
-## 1. Central Portal account + namespace
+## 1. Central Portal account + namespace (detailed)
 
-1. Sign in at [central.sonatype.com](https://central.sonatype.com/).
-2. Open **Namespaces** → create namespace **`ru.myway-line`**.
-3. Copy the **Verification Key** shown for the request.
-4. At your DNS registrar for `myway-line.ru`, add a **TXT** record:
-   - Host / name: `@` (apex of `myway-line.ru`)
-   - Value: the Verification Key from the portal
-5. Wait until DNS propagates, then verify:
+Official docs: [Create account](https://central.sonatype.org/register/central-portal/), [Register namespace](https://central.sonatype.org/register/namespace/).
+
+### 1.1 Create / sign in to Central Portal
+
+1. Open https://central.sonatype.com/
+2. Click **Sign In** (top right).
+3. Sign up with **GitHub**, **Google**, or email/password.
+   - Prefer the same GitHub account as `tormoz70` if possible.
+   - Use a real email you can access (needed for account recovery/support).
+4. Complete signup (confirm email if asked).
+5. You should land on the Central Publisher Portal dashboard.
+
+Note: if you signed in with GitHub, Sonatype may auto-create `io.github.tormoz70`. That is fine — you still need a **separate** DNS namespace `ru.myway-line` for this project.
+
+### 1.2 Request namespace `ru.myway-line`
+
+Why this value:
+
+| Domain you own | Namespace to register |
+| --- | --- |
+| `myway-line.ru` | `ru.myway-line` |
+
+After verification you can publish any groupId under it, including our project group:
+
+`ru.myway-line.xlreport`
+
+Steps:
+
+1. Top-right corner → click your **username/email**.
+2. Click **View Namespaces**.
+3. Click **Add Namespace**.
+4. Enter exactly:
+
+```text
+ru.myway-line
+```
+
+5. Click **Submit**.
+6. The new namespace appears with status **Unverified**.
+7. On the namespace card, find **Verification Key** and click the clipboard icon to copy it.
+   - It looks like a token / key string (sometimes similar to older `OSSRH-…` style ids).
+   - Keep this key — it goes into DNS in step 2.
+
+Do **not** click **Verify Namespace / Confirm** yet.
+
+---
+
+## 2. DNS TXT verification for `myway-line.ru` (detailed)
+
+Official FAQ: [How to set TXT record](https://central.sonatype.org/faq/how-to-set-txt-record/).
+
+Sonatype checks the **apex domain** matching the namespace:
+
+| Namespace | DNS host they query |
+| --- | --- |
+| `ru.myway-line` | `myway-line.ru` |
+
+They do **not** check `www.myway-line.ru`, `maven.myway-line.ru`, etc.
+
+### 2.1 Add TXT record at your registrar
+
+1. Log in to the panel where DNS for `myway-line.ru` is managed
+   (registrar / hosting / Cloudflare / etc.).
+2. Open DNS zone for **`myway-line.ru`**.
+3. Add a new record:
+
+| Field | What to set |
+| --- | --- |
+| Type | `TXT` |
+| Host / Name | `@` or blank or `myway-line.ru` (depends on panel; must apply to apex) |
+| Value / Content | paste the **Verification Key** from Central Portal (exact, no quotes unless the panel requires them) |
+| TTL | default or `3600` |
+
+Common panel gotchas:
+
+- If Host is `@` → record applies to `myway-line.ru` (correct).
+- If you type Host `myway-line.ru` in a panel that already suffixes the domain, you may accidentally create `myway-line.ru.myway-line.ru` — wrong.
+- Do not put the key on a subdomain unless Sonatype asked for that (they didn't).
+- Existing other TXT records (SPF, DKIM, etc.) can stay; add one more TXT.
+
+### 2.2 Wait for DNS propagation, then check locally
+
+In PowerShell:
 
 ```powershell
 Resolve-DnsName myway-line.ru -Type TXT
 ```
 
-6. Only after the TXT record is visible, confirm verification in the Central Portal.
-7. Wait until the namespace status is **Verified**.
+Or CMD:
 
-Do **not** confirm verification before the TXT record exists — NXDOMAIN can be cached and delay approval.
+```bat
+nslookup -type=TXT myway-line.ru
+```
 
-Official docs: [Register a Namespace](https://central.sonatype.org/register/namespace/).
+Online check: https://toolbox.googleapps.com/apps/dig/#TXT/ → query `myway-line.ru`
+
+You must see your Verification Key among the TXT answers.
+
+If not visible yet:
+
+- wait 5–30 minutes (sometimes up to a few hours),
+- confirm you edited the **authoritative** DNS (not an unused secondary zone),
+- flush local cache if needed: `ipconfig /flushdns`.
+
+### 2.3 Only then confirm verification in Central Portal
+
+1. Return to https://central.sonatype.com/ → **View Namespaces**.
+2. On `ru.myway-line` click **Verify Namespace**.
+3. Confirm only after TXT is visible in `Resolve-DnsName`.
+4. Status becomes **Verification Pending**, then usually **Verified** within minutes.
+
+Critical: if you confirm **before** TXT exists, Sonatype may cache NXDOMAIN and verification can stall for hours. Use **Cancel Verification**, fix DNS, then verify again.
+
+### 2.4 Success criteria
+
+Namespace `ru.myway-line` status = **Verified**.
+
+Then you may publish coordinates like:
+
+```text
+ru.myway-line.xlreport:engine-core:0.1.0
+```
 
 ## 2. User token
 
