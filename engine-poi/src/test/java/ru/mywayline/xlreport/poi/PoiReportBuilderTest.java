@@ -421,6 +421,70 @@ class PoiReportBuilderTest {
     }
 
     @Test
+    void removesUnusedTemplateRowsWhenDataIsSmallerThanTemplate() throws Exception {
+        Path tempDir = Files.createTempDirectory("poi-builder-shrink");
+        Path template = tempDir.resolve("template-shrink.xlsx");
+        Path result = tempDir.resolve("result-shrink.xlsx");
+
+        try (XSSFWorkbook wb = new XSSFWorkbook()) {
+            var sheet = wb.createSheet("Sheet1");
+            var details = sheet.createRow(0);
+            details.createCell(0).setCellValue("details");
+            details.createCell(1).setCellValue("=sales_A");
+            var totals = sheet.createRow(1);
+            totals.createCell(0).setCellValue("totals");
+            totals.createCell(1).setCellValue("sum(sales_amount)");
+            sheet.createRow(2).createCell(0).setCellValue("Footer label");
+            sheet.createRow(3).createCell(0).setCellValue("Static tail");
+
+            var name = wb.createName();
+            name.setNameName("Sales");
+            name.setRefersToFormula("'Sheet1'!A1:B4");
+            try (OutputStream out = Files.newOutputStream(template)) {
+                wb.write(out);
+            }
+        }
+
+        var cfg = ReportConfig.builder()
+            .uid("u-shrink")
+            .fullCode("demo.shrink")
+            .title("Demo")
+            .subject("s")
+            .author("a")
+            .templatePath(template)
+            .outputPath(result)
+            .compatibilityMode(CompatibilityMode.STRICT)
+            .extAttributes(ExtAttributes.builder().targetFormat("msexcel").build())
+            .dataSource(
+                DataSourceConfig.builder()
+                    .rangeName("Sales")
+                    .field(FieldDef.builder().name("A").build())
+                    .field(FieldDef.builder().name("amount").build())
+                    .build()
+            )
+            .build();
+
+        var provider = new MapDataProvider(
+            Map.of("Sales", List.of(Map.of("A", "R1", "amount", 5)))
+        );
+
+        var builder = new PoiReportBuilder();
+        try (var session = builder.build(cfg, provider)) {
+            session.save();
+        }
+
+        try (XSSFWorkbook wb = new XSSFWorkbook(Files.newInputStream(result))) {
+            var s = wb.getSheet("Sheet1");
+            assertEquals("R1", s.getRow(0).getCell(1).getStringCellValue());
+            assertTrue(s.getRow(2) == null || s.getRow(2).getCell(0) == null
+                || s.getRow(2).getCell(0).getCellType() == CellType.BLANK);
+            assertTrue(s.getRow(3) == null || s.getRow(3).getCell(0) == null
+                || s.getRow(3).getCell(0).getCellType() == CellType.BLANK);
+            assertTrue(s.getLastRowNum() <= 1, "unused template tail should be removed or blanked");
+        }
+    }
+
+    @Test
     void lenientModeAllowsTemplateWithoutDetailsMarker() throws Exception {
         Path tempDir = Files.createTempDirectory("poi-builder-lenient");
         Path template = tempDir.resolve("template-lenient.xlsx");

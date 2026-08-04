@@ -3,16 +3,20 @@ package ru.mywayline.xlreport.js.api;
 import org.apache.poi.ss.usermodel.Cell;
 import org.apache.poi.ss.usermodel.CellStyle;
 import org.apache.poi.ss.usermodel.CellType;
-import org.apache.poi.ss.usermodel.DateUtil;
-import org.apache.poi.xssf.usermodel.XSSFCellStyle;
-import org.apache.poi.xssf.usermodel.XSSFWorkbook;
+import org.apache.poi.ss.usermodel.Workbook;
 import org.graalvm.polyglot.HostAccess;
 
 public class JsCellApi {
     private final Cell cell;
+    private final CellStyleCache styleCache;
 
     public JsCellApi(Cell cell) {
+        this(cell, null);
+    }
+
+    JsCellApi(Cell cell, CellStyleCache styleCache) {
         this.cell = cell;
+        this.styleCache = styleCache;
     }
 
     /** Cell value as string. Formula cells return "=<formula>". */
@@ -84,7 +88,19 @@ public class JsCellApi {
      */
     @HostAccess.Export
     public void setNumberFormat(String formatString) {
-        var workbook = cell.getSheet().getWorkbook();
+        Workbook workbook = cell.getSheet().getWorkbook();
+        CellStyle current = cell.getCellStyle();
+        if (current != null) {
+            String existing = workbook.getCreationHelper().createDataFormat().getFormat(current.getDataFormat());
+            if (formatString.equals(existing)) {
+                return;
+            }
+        }
+        if (styleCache != null) {
+            CellStyle style = styleCache.styleWithFormat(workbook, cell.getCellStyle(), formatString);
+            cell.setCellStyle(style);
+            return;
+        }
         var helper = workbook.getCreationHelper();
         var style = workbook.createCellStyle();
         style.cloneStyleFrom(cell.getCellStyle());
@@ -97,9 +113,19 @@ public class JsCellApi {
      */
     @HostAccess.Export
     public void copyStyleFrom(JsCellApi source) {
-        var workbook = cell.getSheet().getWorkbook();
-        var newStyle = workbook.createCellStyle();
-        newStyle.cloneStyleFrom(source.cell.getCellStyle());
+        CellStyle sourceStyle = source.cell.getCellStyle();
+        Workbook targetWorkbook = cell.getSheet().getWorkbook();
+        Workbook sourceWorkbook = source.cell.getSheet().getWorkbook();
+        if (targetWorkbook == sourceWorkbook) {
+            cell.setCellStyle(sourceStyle);
+            return;
+        }
+        if (styleCache != null) {
+            cell.setCellStyle(styleCache.cloneStyle(targetWorkbook, sourceStyle));
+            return;
+        }
+        var newStyle = targetWorkbook.createCellStyle();
+        newStyle.cloneStyleFrom(sourceStyle);
         cell.setCellStyle(newStyle);
     }
 

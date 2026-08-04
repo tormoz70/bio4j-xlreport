@@ -2,6 +2,7 @@ package ru.mywayline.xlreport.console;
 
 import ru.mywayline.xlreport.core.api.DataProvider;
 import ru.mywayline.xlreport.core.api.MapDataProvider;
+import ru.mywayline.xlreport.core.api.ReportBuildStats;
 import ru.mywayline.xlreport.core.api.ReportSession;
 import ru.mywayline.xlreport.core.model.CompatibilityMode;
 import ru.mywayline.xlreport.core.model.PostScriptConfig;
@@ -123,14 +124,17 @@ public final class XlReportConsoleMain {
         DataProvider provider = createDataProvider(args, config, runtimeParams);
         logStage("create data provider", stage);
         stage = Instant.now();
-        Path out = runBuildPipeline(config, provider);
+        BuildPipelineResult pipeline = runBuildPipeline(config, provider);
         logStage("engine build (fetch + poi + post)", stage);
 
         Duration dur = Duration.between(started, Instant.now());
         checkPerformanceSla(args, dur, provider, config);
-        log("Report done: " + out);
+        log("Report done: " + pipeline.outputPath());
         log("Duration: " + formatDuration(dur));
         log("Total elapsed from args parse: " + formatDuration(Duration.between(t0, Instant.now())));
+        if (pipeline.stats() != null) {
+            log(pipeline.stats().summaryLine());
+        }
 
         if (args.isStopOnFinish()) {
             // In non-interactive launches (e.g., CI/cmd wrappers), stdin may be unavailable.
@@ -259,7 +263,7 @@ public final class XlReportConsoleMain {
         return new MapDataProvider(data);
     }
 
-    private static Path runBuildPipeline(ReportConfig config, DataProvider provider) throws Exception {
+    private static BuildPipelineResult runBuildPipeline(ReportConfig config, DataProvider provider) throws Exception {
         OracleJdbcDataProvider oracle = extractOracleProvider(provider);
         if (oracle != null) {
             executeSqlHooks(oracle, config.getPreSqlScripts(), "pre-sql");
@@ -275,7 +279,7 @@ public final class XlReportConsoleMain {
                 jsPost.process(config, script, session);
             }
             session.save();
-            return session.outputPath();
+            return new BuildPipelineResult(session.outputPath(), session.buildStats());
         }
     }
 
@@ -498,6 +502,7 @@ public final class XlReportConsoleMain {
         System.out.println("Usage:");
         System.out.println("  gradlew :app-console:run --args=\"console\"");
         System.out.println("  gradlew :app-console:run --args=\"/rpt:<report.xml> [/template:<template.xlsx>] [/data:<data.json>] [/mode:strict|lenient] [/out:<file>] [/rptPrms:k=v;a=b] [/rptStopOnFinish:true|false]\"");
+        System.out.println("  Quote values with semicolons: /rptPrms:\"comment=hello;world\"");
         System.out.println("  gradlew :app-console:run --args=\"/rpt:<report.xml> /dbUrl:<jdbc-url> /dbUser:<user> /dbPassword:<password> [/dbDriver:oracle.jdbc.OracleDriver] [/dbFetchSize:1000] [/dbProfiles:<profiles.json>] [/perfSlaMs:60000] [/dbaPackOut:C:/tmp/dba-pack.md] [/template:<template.xlsx>] [/mode:strict|lenient] [/out:<file>] [/rptPrms:k=v;a=b]\"");
         System.out.println();
         System.out.println("data.json format:");
@@ -518,6 +523,9 @@ public final class XlReportConsoleMain {
     private static void logStage(String stageName, Instant startedAt) {
         Duration d = Duration.between(startedAt, Instant.now());
         log("Stage '" + stageName + "' took " + d.toMillis() + " ms");
+    }
+
+    private record BuildPipelineResult(Path outputPath, ReportBuildStats stats) {
     }
 
     private record DbProfileSpec(

@@ -14,13 +14,19 @@ public class JsRangeApi {
     private final int firstCol0; // 0-based
     private final int lastRow0;  // 0-based (inclusive)
     private final int lastCol0;  // 0-based (inclusive)
+    private final CellStyleCache styleCache;
 
     public JsRangeApi(Sheet sheet, int firstRow0, int firstCol0, int lastRow0, int lastCol0) {
+        this(sheet, firstRow0, firstCol0, lastRow0, lastCol0, null);
+    }
+
+    public JsRangeApi(Sheet sheet, int firstRow0, int firstCol0, int lastRow0, int lastCol0, CellStyleCache styleCache) {
         this.sheet = sheet;
         this.firstRow0 = firstRow0;
         this.firstCol0 = firstCol0;
         this.lastRow0 = lastRow0;
         this.lastCol0 = lastCol0;
+        this.styleCache = styleCache;
     }
 
     /** Number of rows in the range. */
@@ -51,7 +57,7 @@ public class JsRangeApi {
         if (cell == null) {
             cell = row.createCell(absCol);
         }
-        return new JsCellApi(cell);
+        return new JsCellApi(cell, styleCache);
     }
 
     /** Absolute 1-based row index of the first row in this range. */

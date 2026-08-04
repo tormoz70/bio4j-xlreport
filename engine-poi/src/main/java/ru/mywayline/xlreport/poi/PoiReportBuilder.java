@@ -2,6 +2,7 @@ package ru.mywayline.xlreport.poi;
 
 import ru.mywayline.xlreport.core.api.DataProvider;
 import ru.mywayline.xlreport.core.api.ReportBuilder;
+import ru.mywayline.xlreport.core.api.ReportBuildStats;
 import ru.mywayline.xlreport.core.api.ReportSession;
 import ru.mywayline.xlreport.core.model.CompatibilityMode;
 import ru.mywayline.xlreport.core.model.DataSourceConfig;
@@ -35,6 +36,7 @@ public class PoiReportBuilder implements ReportBuilder {
     private static final Pattern PLACEHOLDER_PATTERN = Pattern.compile("\\w+_[\\w#$]+\\b");
     private static final Pattern GROUP_MARKER_PATTERN = Pattern.compile("(?i)^(group[HF])\\s*[_=]\\s*(.+)$");
     private static final Pattern TOTAL_DIRECTIVE_PATTERN = Pattern.compile("(?i)^(sum|cnt|avg|min|max)\\s*(?:\\(\\s*([^)]+)\\s*\\))?$");
+    private final ReportBuildStats stats = new ReportBuildStats();
 
     @Override
     public ReportSession build(ReportConfig config, DataProvider dataProvider) throws Exception {
@@ -42,11 +44,14 @@ public class PoiReportBuilder implements ReportBuilder {
             XSSFWorkbook workbook = new XSSFWorkbook(in);
 
             for (DataSourceConfig ds : config.getDataSources()) {
-                writeDataSource(workbook, ds, dataProvider.fetch(ds), config.getCompatibilityMode());
+                stats.incrementDataSources();
+                List<Map<String, Object>> rows = dataProvider.fetch(ds);
+                stats.addGeneratedRows(rows == null ? 0 : rows.size());
+                writeDataSource(workbook, ds, rows, config.getCompatibilityMode());
             }
             applyGlobalPlaceholders(workbook, config);
 
-            return new PoiReportSession(workbook, config.getOutputPath());
+            return new PoiReportSession(workbook, config.getOutputPath(), stats);
         }
     }
 
@@ -97,6 +102,7 @@ public class PoiReportBuilder implements ReportBuilder {
         }
 
         writeRows(sheet, startRow, startCol, endCol, templateDef, outputRows);
+        shrinkUnusedTemplateRows(sheet, startRow, endRowTemplate, startCol, endCol, outputRows.size(), templateDef.templateHeight());
         applyGrouping(sheet, startRow, buildResult.groupSpans());
         int endRow = startRow + outputRows.size() - 1;
         String newRange = PoiWorkbookOps.rangeA1(sheet.getSheetName(), startRow, endRow, startCol, endCol);
@@ -260,6 +266,50 @@ public class PoiReportBuilder implements ReportBuilder {
         }
     }
 
+    private void shrinkUnusedTemplateRows(
+        Sheet sheet,
+        int startRow,
+        int endRowTemplate,
+        int startCol,
+        int endCol,
+        int outputRowCount,
+        int templateHeight
+    ) {
+        int unused = templateHeight - outputRowCount;
+        if (unused <= 0) {
+            return;
+        }
+        int clearFrom = startRow + outputRowCount;
+        if (clearFrom <= endRowTemplate) {
+            clearRowRange(sheet, clearFrom, endRowTemplate, startCol, endCol);
+        }
+        if (sheet.getLastRowNum() > endRowTemplate) {
+            sheet.shiftRows(endRowTemplate + 1, sheet.getLastRowNum(), -unused, true, false);
+        } else if (unused > 0 && clearFrom <= endRowTemplate) {
+            for (int r = endRowTemplate; r >= clearFrom; r--) {
+                Row row = sheet.getRow(r);
+                if (row != null) {
+                    sheet.removeRow(row);
+                }
+            }
+        }
+    }
+
+    private void clearRowRange(Sheet sheet, int fromRow, int toRow, int startCol, int endCol) {
+        for (int r = fromRow; r <= toRow; r++) {
+            Row row = sheet.getRow(r);
+            if (row == null) {
+                continue;
+            }
+            for (int c = startCol; c <= endCol; c++) {
+                Cell cell = row.getCell(c);
+                if (cell != null) {
+                    cell.setBlank();
+                }
+            }
+        }
+    }
+
     private void writeRows(
         Sheet sheet,
         int startRow,
@@ -417,12 +467,10 @@ public class PoiReportBuilder implements ReportBuilder {
     ) {
         List<Integer> detailIndexes = totalRow.detailIndexes();
         boolean rootTotal = totalRow.rootTotal();
-        Row directiveRow = rootTotal ? templateDef.totalsTemplateRow() : null;
-        if (!rootTotal && !detailIndexes.isEmpty()) {
-            // The group footer row style is already copied; totals directives are still read from totals row.
-            directiveRow = templateDef.totalsTemplateRow();
+        if (templateDef.totalsTemplateRow() == null) {
+            return;
         }
-        if (directiveRow == null) {
+        if (!rootTotal && detailIndexes.isEmpty()) {
             return;
         }
         for (int c = startCol; c <= endCol; c++) {

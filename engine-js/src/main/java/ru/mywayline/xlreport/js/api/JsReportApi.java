@@ -9,19 +9,37 @@ import org.apache.poi.ss.util.CellReference;
 import org.apache.poi.xssf.usermodel.XSSFSheet;
 import org.apache.poi.xssf.usermodel.XSSFWorkbook;
 import org.graalvm.polyglot.HostAccess;
+import ru.mywayline.xlreport.core.api.ReportBuildStats;
 
 @Slf4j
 public class JsReportApi {
     private final XSSFWorkbook workbook;
     private final Map<String, String> params;
+    private final CellStyleCache styleCache = new CellStyleCache();
+    private final ReportBuildStats stats;
 
     public JsReportApi(XSSFWorkbook workbook) {
-        this(workbook, Collections.emptyMap());
+        this(workbook, Collections.emptyMap(), null);
     }
 
     public JsReportApi(XSSFWorkbook workbook, Map<String, String> params) {
+        this(workbook, params, null);
+    }
+
+    public JsReportApi(XSSFWorkbook workbook, Map<String, String> params, ReportBuildStats stats) {
         this.workbook = workbook;
         this.params = params != null ? params : Collections.emptyMap();
+        this.stats = stats;
+    }
+
+    CellStyleCache styleCache() {
+        return styleCache;
+    }
+
+    public void publishStyleCacheStats() {
+        if (stats != null) {
+            stats.addStyleCacheStats(styleCache.createdCount(), styleCache.hitCount());
+        }
     }
 
     // ── Sheet access ──────────────────────────────────────────────────────────
@@ -33,13 +51,13 @@ public class JsReportApi {
         if (sheet == null) {
             throw new IllegalArgumentException("Sheet not found: " + name);
         }
-        return new JsSheetApi(sheet);
+        return new JsSheetApi(sheet, styleCache);
     }
 
-    /** Get sheet by 1-based index. */
+    /** Get sheet by 1-based index (first sheet is {@code 1}, not {@code 0}). */
     @HostAccess.Export
     public JsSheetApi sheetAt(int indexOneBased) {
-        return new JsSheetApi(workbook.getSheetAt(indexOneBased - 1));
+        return new JsSheetApi(workbook.getSheetAt(indexOneBased - 1), styleCache);
     }
 
     /** Names of all sheets in the workbook. */
@@ -60,9 +78,9 @@ public class JsReportApi {
     public JsSheetApi createSheet(String name) {
         XSSFSheet existing = workbook.getSheet(name);
         if (existing != null) {
-            return new JsSheetApi(existing);
+            return new JsSheetApi(existing, styleCache);
         }
-        return new JsSheetApi(workbook.createSheet(name));
+        return new JsSheetApi(workbook.createSheet(name), styleCache);
     }
 
     /**
@@ -73,11 +91,11 @@ public class JsReportApi {
     public JsSheetApi createSheetAt(String name, int positionOneBased) {
         XSSFSheet existing = workbook.getSheet(name);
         if (existing != null) {
-            return new JsSheetApi(existing);
+            return new JsSheetApi(existing, styleCache);
         }
         XSSFSheet sheet = workbook.createSheet(name);
         workbook.setSheetOrder(name, positionOneBased - 1);
-        return new JsSheetApi(sheet);
+        return new JsSheetApi(sheet, styleCache);
     }
 
     /** Remove a sheet by name. No-op if the sheet does not exist. */
@@ -113,7 +131,7 @@ public class JsReportApi {
             var sheet = sheetName != null ? workbook.getSheet(sheetName) : workbook.getSheetAt(0);
             if (sheet == null) return null;
             return new JsRangeApi(sheet, first.getRow(), first.getCol(),
-                last.getRow(), last.getCol());
+                last.getRow(), last.getCol(), styleCache);
         } catch (Exception e) {
             log.warn("Cannot resolve named range '{}': {}", rangeName, e.getMessage());
             return null;

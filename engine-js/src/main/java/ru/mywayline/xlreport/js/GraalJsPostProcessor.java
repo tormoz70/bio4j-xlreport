@@ -1,5 +1,6 @@
 package ru.mywayline.xlreport.js;
 
+import ru.mywayline.xlreport.core.api.ReportBuildStats;
 import ru.mywayline.xlreport.core.api.ReportPostProcessor;
 import ru.mywayline.xlreport.core.api.ReportSession;
 import ru.mywayline.xlreport.core.model.PostScriptConfig;
@@ -7,7 +8,7 @@ import ru.mywayline.xlreport.core.model.ReportConfig;
 import ru.mywayline.xlreport.js.api.JsReportApi;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.Map;
+import java.util.regex.Pattern;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.poi.xssf.usermodel.XSSFWorkbook;
 import org.graalvm.polyglot.Context;
@@ -27,6 +28,18 @@ import org.graalvm.polyglot.HostAccess;
  */
 @Slf4j
 public class GraalJsPostProcessor implements ReportPostProcessor {
+    private static final Pattern IDENT = Pattern.compile("[A-Za-z_][A-Za-z0-9_]*");
+    private static final String MACRO_DISPATCH_SCRIPT = """
+        (function() {
+          var mod = _macroModuleObj;
+          var fn = _macroFunction;
+          if (mod && typeof mod[fn] === 'function') {
+            mod[fn](report);
+          } else {
+            report.warn('Macro function not found: ' + fn);
+          }
+        })();
+        """;
 
     @Override
     public void process(ReportConfig reportConfig, PostScriptConfig scriptConfig, ReportSession session) throws Exception {
@@ -39,9 +52,9 @@ public class GraalJsPostProcessor implements ReportPostProcessor {
         }
 
         long timeoutMs = scriptConfig.getTimeoutMs() > 0 ? scriptConfig.getTimeoutMs() : 30_000L;
-        JsReportApi reportApi = new JsReportApi(workbook, reportConfig.getParams());
+        JsReportApi reportApi = new JsReportApi(workbook, reportConfig.getParams(), session.buildStats());
 
-        evalScript(reportApi, script, scriptConfig.getName(), timeoutMs);
+        evalScript(reportApi, script, scriptConfig.getName(), timeoutMs, session.buildStats());
     }
 
     /**
@@ -73,6 +86,15 @@ public class GraalJsPostProcessor implements ReportPostProcessor {
             functionName = macroName;
         }
 
+        if (moduleName != null && !IDENT.matcher(moduleName).matches()) {
+            log.warn("Invalid macro module name '{}': rejected", moduleName);
+            return;
+        }
+        if (!IDENT.matcher(functionName).matches()) {
+            log.warn("Invalid macro function name '{}': rejected", functionName);
+            return;
+        }
+
         // Load module JS file if present
         String moduleScript = null;
         if (moduleName != null && macroLibDir != null) {
@@ -94,29 +116,51 @@ public class GraalJsPostProcessor implements ReportPostProcessor {
             return;
         }
 
-        String safeModule   = moduleName;
-        String safeFunction = functionName.replace("'", "\\'");
-        String dispatchScript = moduleScript + "\n" +
-            "// Auto-dispatch: " + macroName + "\n" +
-            "(function() {\n" +
-            "  var _mod = (typeof " + safeModule + " !== 'undefined') ? " + safeModule + " : null;\n" +
-            "  if (_mod && typeof _mod['" + safeFunction + "'] === 'function') {\n" +
-            "    _mod['" + safeFunction + "'](report);\n" +
-            "  } else {\n" +
-            "    report.warn('Macro function not found: " + macroName.replace("'", "\\'") + "');\n" +
-            "  }\n" +
-            "})();\n";
+        String dispatchScript = "// Auto-dispatch: " + macroName + "\n" + MACRO_DISPATCH_SCRIPT;
 
-        JsReportApi reportApi = new JsReportApi(workbook, reportConfig.getParams());
-        evalScript(reportApi, dispatchScript, "macro-" + macroName, 60_000L);
+        JsReportApi reportApi = new JsReportApi(workbook, reportConfig.getParams(), session.buildStats());
+        evalMacroScript(reportApi, dispatchScript, moduleScript, moduleName, functionName, "macro-" + macroName, 60_000L, session.buildStats());
     }
 
     // ── Internal ──────────────────────────────────────────────────────────────
 
-    private void evalScript(JsReportApi reportApi, String script, String scriptName, long timeoutMs) {
+    private void evalScript(
+        JsReportApi reportApi,
+        String script,
+        String scriptName,
+        long timeoutMs,
+        ReportBuildStats stats
+    ) {
+        evalScript(reportApi, script, scriptName, timeoutMs, stats, null, null, null);
+    }
+
+    private void evalMacroScript(
+        JsReportApi reportApi,
+        String dispatchScript,
+        String moduleScript,
+        String moduleName,
+        String functionName,
+        String scriptName,
+        long timeoutMs,
+        ReportBuildStats stats
+    ) {
+        evalScript(reportApi, dispatchScript, scriptName, timeoutMs, stats, moduleScript, moduleName, functionName);
+    }
+
+    private void evalScript(
+        JsReportApi reportApi,
+        String script,
+        String scriptName,
+        long timeoutMs,
+        ReportBuildStats stats,
+        String moduleScript,
+        String moduleName,
+        String functionName
+    ) {
         HostAccess hostAccess = HostAccess.newBuilder(HostAccess.EXPLICIT)
             .allowArrayAccess(true)
             .build();
+        long startedNs = System.nanoTime();
         try (Context context = Context.newBuilder("js")
             .allowIO(false)
             .allowHostAccess(hostAccess)
@@ -126,8 +170,24 @@ public class GraalJsPostProcessor implements ReportPostProcessor {
 
             context.getBindings("js").putMember("report", reportApi);
             context.getBindings("js").putMember("timeoutMs", timeoutMs);
+            if (moduleScript != null) {
+                context.eval("js", moduleScript);
+                Object moduleObj = context.getBindings("js").getMember(moduleName);
+                if (moduleObj == null) {
+                    log.warn("Macro module '{}' was not defined by {}", moduleName, scriptName);
+                    return;
+                }
+                context.getBindings("js").putMember("_macroModuleObj", moduleObj);
+                context.getBindings("js").putMember("_macroFunction", functionName);
+            }
             context.eval("js", script);
             log.debug("Executed JS script: {}", scriptName);
+        } finally {
+            reportApi.publishStyleCacheStats();
+            if (stats != null) {
+                stats.incrementExecutedScripts();
+                stats.addScriptEvalMs((System.nanoTime() - startedNs) / 1_000_000L);
+            }
         }
     }
 

@@ -291,7 +291,7 @@ public class XmlReportConfigParser {
     private Path resolveTemplatePath(Element root, Path sourceFile) {
         String direct = text(root, "adv_template", "").trim();
         if (!direct.isBlank()) {
-            return Path.of(direct);
+            return resolveRelativePath(direct, sourceFile, "template");
         }
         if (sourceFile != null) {
             String fileName = sourceFile.getFileName().toString();
@@ -307,7 +307,7 @@ public class XmlReportConfigParser {
     private Path resolveOutputPath(Element root, Path sourceFile) {
         String output = text(root, "filename_fmt", "").trim();
         if (!output.isBlank()) {
-            return Path.of(output);
+            return resolveRelativePath(output, sourceFile, "output");
         }
         if (sourceFile != null) {
             String fileName = sourceFile.getFileName().toString().replace("(rpt).xml", "").replace(".xml", "");
@@ -317,6 +317,26 @@ public class XmlReportConfigParser {
             }
         }
         return Path.of("report.xlsx");
+    }
+
+    private Path resolveRelativePath(String pathStr, Path sourceFile, String kind) {
+        Path directPath = Path.of(pathStr);
+        if (directPath.isAbsolute()) {
+            return directPath;
+        }
+        if (sourceFile != null && sourceFile.getParent() != null) {
+            Path xmlRelative = sourceFile.getParent().resolve(directPath).normalize();
+            if (Files.exists(xmlRelative)) {
+                return xmlRelative;
+            }
+            Path cwdPath = directPath.normalize();
+            if (Files.exists(cwdPath)) {
+                log.warn("{} path resolved from CWD fallback: {} (XML-relative {} not found)", kind, cwdPath, xmlRelative);
+                return cwdPath;
+            }
+            return xmlRelative;
+        }
+        return directPath;
     }
 
     private String deriveFullCode(Path sourceFile) {

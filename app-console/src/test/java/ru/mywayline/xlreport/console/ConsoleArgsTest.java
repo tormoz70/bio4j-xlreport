@@ -42,6 +42,15 @@ class ConsoleArgsTest {
     }
 
     @Test
+    void parseParamsWithSemicolonInsideQuotedValue() {
+        ConsoleArgs parsed = ConsoleArgs.parse(new String[] {
+            "/rpt:a.xml",
+            "/rptPrms:\"comment=hello;world;end\""
+        });
+        assertEquals("hello;world;end", parsed.getReportParams().get("comment"));
+    }
+
+    @Test
     void parseOracleArgs() {
         String[] args = {
             "/rpt:C:/rpts/form100(rpt).xml",

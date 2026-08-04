@@ -83,6 +83,35 @@ class XmlReportConfigParserTest {
     }
 
     @Test
+    void resolvesRelativeTemplatePathFromXmlDirectory() throws Exception {
+        Path tempDir = Files.createTempDirectory("xml-parser-paths");
+        Path reportsDir = tempDir.resolve("reports");
+        Files.createDirectories(reportsDir);
+        Path template = reportsDir.resolve("demo.xlsx");
+        Files.writeString(template, "x");
+        Path xmlFile = reportsDir.resolve("demo.xml");
+
+        String xml = """
+            <reportDef full_code="demo.report">
+              <adv_template>demo.xlsx</adv_template>
+              <filename_fmt>demo-result.xlsx</filename_fmt>
+              <title>Demo</title>
+              <subject>Subject</subject>
+              <autor>Author</autor>
+            </reportDef>
+            """;
+
+        var parser = new XmlReportConfigParser();
+        var cfg = parser.parse(xml, xmlFile, CompatibilityMode.STRICT);
+
+        assertEquals(template.toAbsolutePath().normalize(), cfg.getTemplatePath().toAbsolutePath().normalize());
+        assertEquals(
+            reportsDir.resolve("demo-result.xlsx").toAbsolutePath().normalize(),
+            cfg.getOutputPath().toAbsolutePath().normalize()
+        );
+    }
+
+    @Test
     void validateAndParseRealReportsIfPresent() throws Exception {
         Path xsdPath = Path.of("c:\\data\\tmp\\rrequest-to-migrate\\ekb-cabinet\\ekb-rpt\\iod\\rptdef.xsd");
         Path reportsDir = Path.of("c:\\data\\tmp\\rrequest-to-migrate\\ekb-cabinet\\ekb-rpt\\rpts_v2\\01_givc");

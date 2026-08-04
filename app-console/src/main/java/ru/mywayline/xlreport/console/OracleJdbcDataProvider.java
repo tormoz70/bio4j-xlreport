@@ -2,6 +2,7 @@ package ru.mywayline.xlreport.console;
 
 import ru.mywayline.xlreport.core.api.DataProvider;
 import ru.mywayline.xlreport.core.model.DataSourceConfig;
+import java.math.BigDecimal;
 import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -32,6 +33,7 @@ import lombok.RequiredArgsConstructor;
 final class OracleJdbcDataProvider implements DataProvider {
     private static final Pattern SQL_FILE_PATTERN = Pattern.compile("^\\s*\\{text-file:([^}]+)}\\s*$", Pattern.CASE_INSENSITIVE);
     private static final DateTimeFormatter DT_FMT = DateTimeFormatter.ofPattern("yyyy.MM.dd HH:mm:ss");
+    private static final SqlParameterParser SQL_PARSER = new SqlParameterParser();
 
     private final String dbUrl;
     private final String dbUser;
@@ -238,8 +240,18 @@ final class OracleJdbcDataProvider implements DataProvider {
         }
 
         if (looksLikeNumericParam(key) && isInteger(value)) {
-            ps.setLong(idx, Long.parseLong(value));
-            return new BoundParam(idx, paramName, "LONG", value);
+            int digitCount = value.length() - (value.startsWith("-") ? 1 : 0);
+            if (digitCount > 18) {
+                ps.setBigDecimal(idx, new BigDecimal(value));
+                return new BoundParam(idx, paramName, "BIGDECIMAL", value);
+            }
+            try {
+                ps.setLong(idx, Long.parseLong(value));
+                return new BoundParam(idx, paramName, "LONG", value);
+            } catch (NumberFormatException ex) {
+                ps.setBigDecimal(idx, new BigDecimal(value));
+                return new BoundParam(idx, paramName, "BIGDECIMAL", value);
+            }
         }
 
         ps.setString(idx, value);
@@ -331,76 +343,8 @@ final class OracleJdbcDataProvider implements DataProvider {
     }
 
     private NamedSql compileNamedSql(String sql) {
-        StringBuilder out = new StringBuilder(sql.length());
-        List<String> params = new ArrayList<>();
-        boolean inString = false;
-        boolean inLineComment = false;
-        boolean inBlockComment = false;
-        for (int i = 0; i < sql.length(); i++) {
-            char ch = sql.charAt(i);
-            char next = i + 1 < sql.length() ? sql.charAt(i + 1) : '\0';
-
-            if (inLineComment) {
-                out.append(ch);
-                if (ch == '\n' || ch == '\r') {
-                    inLineComment = false;
-                }
-                continue;
-            }
-            if (inBlockComment) {
-                out.append(ch);
-                if (ch == '*' && next == '/') {
-                    out.append(next);
-                    i++;
-                    inBlockComment = false;
-                }
-                continue;
-            }
-
-            if (ch == '\'') {
-                out.append(ch);
-                if (inString && next == '\'') {
-                    out.append(next);
-                    i++;
-                } else {
-                    inString = !inString;
-                }
-                continue;
-            }
-            if (!inString && ch == '-' && next == '-') {
-                out.append(ch).append(next);
-                i++;
-                inLineComment = true;
-                continue;
-            }
-            if (!inString && ch == '/' && next == '*') {
-                out.append(ch).append(next);
-                i++;
-                inBlockComment = true;
-                continue;
-            }
-            if (!inString && ch == ':' && i + 1 < sql.length() && isIdentStart(sql.charAt(i + 1))) {
-                int j = i + 2;
-                while (j < sql.length() && isIdentPart(sql.charAt(j))) {
-                    j++;
-                }
-                String name = sql.substring(i + 1, j);
-                params.add(name);
-                out.append('?');
-                i = j - 1;
-                continue;
-            }
-            out.append(ch);
-        }
-        return new NamedSql(out.toString(), params);
-    }
-
-    private boolean isIdentStart(char c) {
-        return Character.isLetter(c) || c == '_';
-    }
-
-    private boolean isIdentPart(char c) {
-        return Character.isLetterOrDigit(c) || c == '_';
+        SqlParameterParser.NamedSql parsed = SQL_PARSER.compile(sql);
+        return new NamedSql(parsed.sql(), parsed.paramOrder());
     }
 
     private record NamedSql(String sql, List<String> paramOrder) {

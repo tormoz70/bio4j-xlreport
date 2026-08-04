@@ -10,9 +10,15 @@ import org.graalvm.polyglot.HostAccess;
 
 public class JsSheetApi {
     private final Sheet sheet;
+    private final CellStyleCache styleCache;
 
     public JsSheetApi(Sheet sheet) {
+        this(sheet, null);
+    }
+
+    JsSheetApi(Sheet sheet, CellStyleCache styleCache) {
         this.sheet = sheet;
+        this.styleCache = styleCache;
     }
 
     /** Sheet name. */
@@ -47,7 +53,7 @@ public class JsSheetApi {
         if (cell == null) {
             cell = row.createCell(col0);
         }
-        return new JsCellApi(cell);
+        return new JsCellApi(cell, styleCache);
     }
 
     /**
@@ -79,14 +85,15 @@ public class JsSheetApi {
     }
 
     /**
-     * Number of the last column with data in the given row (1-based, row is 1-based).
-     * Returns 0 if the row doesn't exist.
+     * Returns {@link org.apache.poi.ss.usermodel.Row#getLastCellNum()} for the row:
+     * index of the last cell plus one (1-based), not a count of non-empty cells.
+     * Returns 0 if the row does not exist.
      */
     @HostAccess.Export
     public int colCount(int rowOneBased) {
         Row row = sheet.getRow(rowOneBased - 1);
         if (row == null) return 0;
-        return row.getLastCellNum(); // getLastCellNum is already 1-based
+        return row.getLastCellNum();
     }
 
     /**
@@ -146,7 +153,7 @@ public class JsSheetApi {
                 if (s != null) targetSheet = s;
             }
             return new JsRangeApi(targetSheet, first.getRow(), first.getCol(),
-                last.getRow(), last.getCol());
+                last.getRow(), last.getCol(), styleCache);
         } catch (Exception e) {
             return null;
         }

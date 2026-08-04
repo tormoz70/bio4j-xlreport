@@ -1,5 +1,6 @@
 package ru.mywayline.xlreport.poi;
 
+import ru.mywayline.xlreport.core.api.ReportBuildStats;
 import ru.mywayline.xlreport.core.api.ReportSession;
 import java.io.OutputStream;
 import java.nio.file.Files;
@@ -10,10 +11,16 @@ import org.apache.poi.xssf.usermodel.XSSFWorkbook;
 public class PoiReportSession implements ReportSession {
     private final XSSFWorkbook workbook;
     private Path outputPath;
+    private final ReportBuildStats stats;
 
     public PoiReportSession(XSSFWorkbook workbook, Path outputPath) {
+        this(workbook, outputPath, null);
+    }
+
+    public PoiReportSession(XSSFWorkbook workbook, Path outputPath, ReportBuildStats stats) {
         this.workbook = workbook;
         this.outputPath = outputPath;
+        this.stats = stats;
     }
 
     @Override
@@ -24,6 +31,11 @@ public class PoiReportSession implements ReportSession {
     @Override
     public Object documentHandle() {
         return workbook;
+    }
+
+    @Override
+    public ReportBuildStats buildStats() {
+        return stats;
     }
 
     @Override
@@ -40,6 +52,9 @@ public class PoiReportSession implements ReportSession {
             Path fallback = buildFallbackPath(outputPath);
             writeTo(fallback);
             outputPath = fallback;
+        }
+        if (stats != null && outputPath != null && Files.exists(outputPath)) {
+            stats.setOutputFileBytes(Files.size(outputPath));
         }
     }
 

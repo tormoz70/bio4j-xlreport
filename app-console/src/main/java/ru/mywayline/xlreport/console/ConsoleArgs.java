@@ -2,7 +2,9 @@ package ru.mywayline.xlreport.console;
 
 import ru.mywayline.xlreport.core.model.CompatibilityMode;
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import lombok.Builder;
@@ -125,8 +127,7 @@ class ConsoleArgs {
         if (raw == null || raw.isBlank()) {
             return params;
         }
-        String[] parts = raw.split(";");
-        for (String p : parts) {
+        for (String p : splitParamTokens(raw)) {
             int eq = p.indexOf('=');
             if (eq <= 0 || eq >= p.length() - 1) {
                 continue;
@@ -134,6 +135,44 @@ class ConsoleArgs {
             params.put(p.substring(0, eq).trim(), p.substring(eq + 1).trim());
         }
         return params;
+    }
+
+    private static List<String> splitParamTokens(String raw) {
+        List<String> tokens = new ArrayList<>();
+        StringBuilder current = new StringBuilder();
+        boolean inSingle = false;
+        boolean inDouble = false;
+        for (int i = 0; i < raw.length(); i++) {
+            char ch = raw.charAt(i);
+            if (ch == '\\' && i + 1 < raw.length() && (inSingle || inDouble)) {
+                char next = raw.charAt(i + 1);
+                if (next == '"' || next == '\'' || next == '\\') {
+                    current.append(next);
+                    i++;
+                    continue;
+                }
+            }
+            if (ch == '\'' && !inDouble) {
+                inSingle = !inSingle;
+                continue;
+            }
+            if (ch == '"' && !inSingle) {
+                inDouble = !inDouble;
+                continue;
+            }
+            if (ch == ';' && !inSingle && !inDouble) {
+                if (current.length() > 0) {
+                    tokens.add(current.toString());
+                    current.setLength(0);
+                }
+                continue;
+            }
+            current.append(ch);
+        }
+        if (current.length() > 0) {
+            tokens.add(current.toString());
+        }
+        return tokens;
     }
 
     private static boolean parseBoolean(String raw, boolean def) {
